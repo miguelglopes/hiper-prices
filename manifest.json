@@ -7,8 +7,14 @@
   "host_permissions": [
     "https://hiper-prices.mglopes.com/*",
     "http://127.0.0.1/*",
-    "http://localhost/*"
+    "http://localhost/*",
+    "https://www.continente.pt/*",
+    "https://www.auchan.pt/*",
+    "https://www.pingodoce.pt/*"
   ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "content_scripts": [
     {
       "matches": [
