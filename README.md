@@ -2,8 +2,11 @@
 
 Manifest V3 browser extension that injects Hiper price history and
 cross-retailer comparisons into supported supermarket product pages.
-On non-product pages it scans visible product links and calls the basket
-comparison API without storing basket data server-side.
+Each match shows a "+ carrinho" button that adds the equivalent product
+to the peer retailer's cart in the background, using the user's existing
+session cookies for that retailer (no login required by the extension
+itself; user logs in to each retailer normally if they want a persistent
+cart).
 
 ## Load locally
 
