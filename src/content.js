@@ -43,6 +43,28 @@ function getConfig() {
   });
 }
 
+// One stable UUID per browser, persisted in chrome.storage.local. Not
+// linked to the web UI's cookie — different origin, different vote
+// identity. The backend treats them as independent voters which is fine
+// for our consensus filter.
+function getVoterId() {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+      resolve(null);
+      return;
+    }
+    chrome.storage.local.get({ voterId: null }, ({ voterId }) => {
+      if (voterId) {
+        resolve(voterId);
+        return;
+      }
+      const minted = (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`)
+        .replace(/-/g, "");
+      chrome.storage.local.set({ voterId: minted }, () => resolve(minted));
+    });
+  });
+}
+
 function detectPage() {
   const config = RETAILERS[window.location.hostname];
   if (!config) return null;
@@ -124,11 +146,10 @@ function insertPanel(anchor) {
   return panel;
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: { "Accept": "application/json" },
-    credentials: "omit"
-  });
+async function fetchJson(url, voterId) {
+  const headers = { "Accept": "application/json" };
+  if (voterId) headers["X-Voter-Id"] = voterId;
+  const response = await fetch(url, { headers, credentials: "omit" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${response.status}`);
@@ -136,13 +157,15 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, voterId) {
+  const headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+  };
+  if (voterId) headers["X-Voter-Id"] = voterId;
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    },
+    headers,
     credentials: "omit",
     body: JSON.stringify(body)
   });
@@ -216,16 +239,29 @@ function renderMatchList(items, emptyLabel) {
   }
   return `
     <ul class="hp-match-list">
-      ${items.map((item) => `
-        <li>
+      ${items.map((item) => {
+        const fb = item.feedback || { up: 0, down: 0, mine: null };
+        const upActive = fb.mine === 1 ? " hp-vote-active" : "";
+        const downActive = fb.mine === -1 ? " hp-vote-active" : "";
+        return `
+        <li class="hp-match-row">
           <a href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
             <span class="hp-retailer">${item.retailer}</span>
             <span class="hp-match-name">${item.name || item.sku}</span>
           </a>
           <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
           <span class="${deltaClass(item.price_delta)}">${deltaLabel(item.price_delta)}</span>
+          <span class="hp-vote">
+            <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
+                    data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
+                    title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
+            <button type="button" class="hp-vote-btn hp-vote-down${downActive}"
+                    data-vote="-1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
+                    title="Não é igual / má alternativa">👎 ${fb.down}</button>
+          </span>
         </li>
-      `).join("")}
+        `;
+      }).join("")}
     </ul>
   `;
 }
@@ -319,7 +355,34 @@ function attachChart(panel, history) {
   draw("1m");
 }
 
-function renderPanel(panel, productPayload, matchesPayload, historyPayload) {
+function attachVoteHandlers(panel, ctx) {
+  const { retailer, sku, apiBase, voterId, refresh } = ctx;
+  panel.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".hp-vote-btn");
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    const peerRetailer = btn.dataset.peerRetailer;
+    const peerSku = btn.dataset.peerSku;
+    const requested = parseInt(btn.dataset.vote, 10);
+    // Toggle: if the active button is clicked again, send 0 to clear.
+    const isActive = btn.classList.contains("hp-vote-active");
+    const finalVote = isActive ? 0 : requested;
+    btn.disabled = true;
+    try {
+      await postJson(`${apiBase}/api/v1/matches/feedback`, {
+        retailer, sku,
+        peer_retailer: peerRetailer, peer_sku: peerSku,
+        vote: finalVote
+      }, voterId);
+      await refresh();
+    } catch (err) {
+      btn.disabled = false;
+      console.warn("hiper-prices vote failed", err);
+    }
+  });
+}
+
+function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx) {
   const latest = productPayload.latest;
   const summary = productPayload.history_summary;
   const sameAll = sortByPrice(matchesPayload.same_product || []);
@@ -360,6 +423,7 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload) {
     </a>
   `;
   attachChart(panel, history);
+  if (ctx) attachVoteHandlers(panel, ctx);
 }
 
 function renderError(panel, message) {
@@ -429,7 +493,7 @@ function renderBasketItems(items) {
   `;
 }
 
-async function renderBasketIfUseful(retailer, config, apiBase) {
+async function renderBasketIfUseful(retailer, config, apiBase, voterId) {
   const items = scanVisibleSkus(config);
   if (items.length < 2 || document.querySelector(".hp-panel")) return;
   const panel = insertPanel(document.body);
@@ -440,7 +504,7 @@ async function renderBasketIfUseful(retailer, config, apiBase) {
     const payload = await postJson(`${apiBase}/api/v1/basket/compare`, {
       retailer,
       items
-    });
+    }, voterId);
     renderBasketPanel(panel, payload);
   } catch (error) {
     renderError(panel, error.message || "Nao foi possivel comparar.");
@@ -450,11 +514,14 @@ async function renderBasketIfUseful(retailer, config, apiBase) {
 async function main() {
   const retailerPage = detectRetailer();
   if (!retailerPage) return;
-  const { apiBase: configuredApiBase } = await getConfig();
+  const [{ apiBase: configuredApiBase }, voterId] = await Promise.all([
+    getConfig(),
+    getVoterId()
+  ]);
   const apiBase = configuredApiBase.replace(/\/$/, "");
   const page = detectPage();
   if (!page) {
-    await renderBasketIfUseful(retailerPage.retailer, retailerPage.config, apiBase);
+    await renderBasketIfUseful(retailerPage.retailer, retailerPage.config, apiBase, voterId);
     return;
   }
   if (document.querySelector(".hp-panel")) return;
@@ -462,16 +529,24 @@ async function main() {
   const panel = insertPanel(findAnchor(page.config));
   const base = `${apiBase}/api/v1/products/${page.retailer}/${page.sku}`;
 
-  try {
-    const [productPayload, matchesPayload, historyPayload] = await Promise.all([
-      fetchJson(base),
-      fetchJson(`${base}/matches`),
-      fetchJson(`${base}/history`).catch(() => ({ history: [] }))
-    ]);
-    renderPanel(panel, productPayload, matchesPayload, historyPayload);
-  } catch (error) {
-    renderError(panel, error.message || "Nao foi possivel carregar dados.");
-  }
+  // re-fetch matches + product + history and re-render. Used after a
+  // vote so the count and the active-button state update.
+  const refresh = async () => {
+    try {
+      const [productPayload, matchesPayload, historyPayload] = await Promise.all([
+        fetchJson(base, voterId),
+        fetchJson(`${base}/matches`, voterId),
+        fetchJson(`${base}/history`, voterId).catch(() => ({ history: [] }))
+      ]);
+      renderPanel(panel, productPayload, matchesPayload, historyPayload, {
+        retailer: page.retailer, sku: page.sku, apiBase, voterId, refresh
+      });
+    } catch (error) {
+      renderError(panel, error.message || "Nao foi possivel carregar dados.");
+    }
+  };
+
+  await refresh();
 }
 
 main();
