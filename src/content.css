@@ -129,8 +129,23 @@
   overflow-wrap: anywhere;
 }
 
-.hp-match-price {
+/* Headline number: €/quantity. Mirrors the web UI's hierarchy where
+   the per-unit price is what the user actually compares. */
+.hp-match-unit-price {
+  grid-column: 2;
+  justify-self: end;
+  font-size: 15px;
   font-weight: 700;
+  color: #1f2933;
+  white-space: nowrap;
+}
+
+.hp-match-price {
+  grid-column: 1 / -1;
+  justify-self: end;
+  font-weight: 500;
+  font-size: 12px;
+  color: #637282;
   white-space: nowrap;
 }
 
