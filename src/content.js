@@ -73,12 +73,6 @@ function detectPage() {
   return { retailer: config.id, sku: match, config };
 }
 
-function detectRetailer() {
-  const config = RETAILERS[window.location.hostname];
-  if (!config) return null;
-  return { retailer: config.id, config };
-}
-
 function extractSku(url, config) {
   try {
     const parsed = new URL(url, window.location.origin);
@@ -87,22 +81,6 @@ function extractSku(url, config) {
   } catch {
     return null;
   }
-}
-
-function scanVisibleSkus(config) {
-  const seen = new Set();
-  const out = [];
-  for (const link of document.querySelectorAll("a[href]")) {
-    const sku = extractSku(link.href, config);
-    if (!sku || seen.has(sku)) continue;
-    const rect = link.getBoundingClientRect();
-    const hasLayout = rect.width > 0 && rect.height > 0;
-    if (!hasLayout) continue;
-    seen.add(sku);
-    out.push({ sku, quantity: 1 });
-    if (out.length >= 50) break;
-  }
-  return out;
 }
 
 const MIN_ANCHOR_WIDTH = 320;
@@ -204,26 +182,30 @@ function trendLabel(value) {
 }
 
 function sortByPrice(matches, { onlyCheaper = false } = {}) {
+  // Prefer per-unit (€/L) for sorting and the "cheaper" gate. Falls
+  // back to absolute price when units differ. A 4-pack at lower
+  // absolute price is not actually cheaper if it costs more per litre.
+  const score = (item) => {
+    const v = item.price_per_unit_delta ?? item.price_delta ?? 0;
+    return v;
+  };
   let filtered = matches.filter((item) => item.latest && item.latest.price !== null);
   if (onlyCheaper) {
-    filtered = filtered.filter((item) => item.price_delta !== null && item.price_delta < 0);
+    filtered = filtered.filter((item) => score(item) < 0);
   }
   return filtered
-    .sort((a, b) => {
-      const da = a.price_delta ?? 0;
-      const db = b.price_delta ?? 0;
-      return da - db;
-    })
+    .sort((a, b) => score(a) - score(b))
     .slice(0, 5);
 }
 
-function deltaLabel(delta) {
+function deltaLabel(delta, unitSuffix = "") {
   if (delta === null || delta === undefined) return "";
   const value = Number(delta);
   if (value === 0) return "mesmo preco";
+  const formatted = formatEuro(Math.abs(value));
   return value < 0
-    ? `${formatEuro(Math.abs(value))} menos`
-    : `${formatEuro(value)} mais`;
+    ? `-${formatted}${unitSuffix}`
+    : `+${formatted}${unitSuffix}`;
 }
 
 function deltaClass(delta) {
@@ -231,6 +213,19 @@ function deltaClass(delta) {
   if (Number(delta) < 0) return "hp-saving hp-saving-cheaper";
   if (Number(delta) > 0) return "hp-saving hp-saving-pricier";
   return "hp-saving hp-saving-flat";
+}
+
+// Prefer €/unit comparison when both sides have it (units already match
+// because /matches only returns price_per_unit_delta when they do).
+// Falls back to absolute price diff so we always render *something*.
+function pickDelta(item) {
+  if (item.price_per_unit_delta !== null && item.price_per_unit_delta !== undefined) {
+    return {
+      value: item.price_per_unit_delta,
+      unitSuffix: item.latest?.unit_primary ? `/${item.latest.unit_primary}` : "",
+    };
+  }
+  return { value: item.price_delta, unitSuffix: "" };
 }
 
 function renderMatchList(items, emptyLabel) {
@@ -243,14 +238,23 @@ function renderMatchList(items, emptyLabel) {
         const fb = item.feedback || { up: 0, down: 0, mine: null };
         const upActive = fb.mine === 1 ? " hp-vote-active" : "";
         const downActive = fb.mine === -1 ? " hp-vote-active" : "";
+        const delta = pickDelta(item);
+        const pp = item.latest?.price_per_primary;
+        const unit = item.latest?.unit_primary;
+        const unitPriceLabel = pp != null && unit
+          ? `${formatEuro(pp)}/${unit}`
+          : "";
         return `
         <li class="hp-match-row">
           <a href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
             <span class="hp-retailer">${item.retailer}</span>
             <span class="hp-match-name">${item.name || item.sku}</span>
           </a>
+          ${unitPriceLabel
+            ? `<span class="hp-match-unit-price">${unitPriceLabel}</span>`
+            : ""}
           <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
-          <span class="${deltaClass(item.price_delta)}">${deltaLabel(item.price_delta)}</span>
+          <span class="${deltaClass(delta.value)}">${deltaLabel(delta.value, delta.unitSuffix)}</span>
           <span class="hp-vote">
             <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
                     data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
@@ -433,98 +437,15 @@ function renderError(panel, message) {
   `;
 }
 
-function renderBasketPanel(panel, payload) {
-  const sameSavings = payload.savings_same_product || 0;
-  const comparableSavings = payload.savings_comparable_alternative || 0;
-  const usefulItems = payload.items
-    .filter((item) => (
-      (item.savings_same_product || 0) > 0
-      || (item.savings_comparable_alternative || 0) > 0
-    ))
-    .slice(0, 5);
-
-  panel.querySelector(".hp-state").textContent = `${payload.priced_item_count}/${payload.item_count}`;
-  panel.querySelector(".hp-body").innerHTML = `
-    <div class="hp-current">
-      <div>
-        <span class="hp-label">Total registado</span>
-        <strong>${formatEuro(payload.baseline_total)}</strong>
-      </div>
-      <div>
-        <span class="hp-label">Poupanca possivel</span>
-        <strong>${formatEuro(Math.max(sameSavings, comparableSavings))}</strong>
-      </div>
-    </div>
-    <div class="hp-stats">
-      <span>mesmo produto ${formatEuro(sameSavings)}</span>
-      <span>alternativas ${formatEuro(comparableSavings)}</span>
-      <span>${payload.priced_item_count} com preco</span>
-    </div>
-    <section>
-      <h2>Melhores trocas</h2>
-      ${renderBasketItems(usefulItems)}
-    </section>
-  `;
-}
-
-function renderBasketItems(items) {
-  if (!items.length) {
-    return `<p class="hp-muted">Sem poupanca encontrada nos produtos visiveis.</p>`;
-  }
-  return `
-    <ul class="hp-match-list hp-basket-list">
-      ${items.map((item) => {
-        const savings = Math.max(
-          item.savings_same_product || 0,
-          item.savings_comparable_alternative || 0
-        );
-        const best = (item.savings_comparable_alternative || 0) > (item.savings_same_product || 0)
-          ? item.cheapest_comparable_alternative
-          : item.cheapest_same_product;
-        return `
-          <li>
-            <span class="hp-match-name">${item.product?.name || item.sku}</span>
-            <span class="hp-match-price">${formatEuro(savings)}</span>
-            <span class="hp-saving">${best?.retailer || ""} ${best?.name || ""}</span>
-          </li>
-        `;
-      }).join("")}
-    </ul>
-  `;
-}
-
-async function renderBasketIfUseful(retailer, config, apiBase, voterId) {
-  const items = scanVisibleSkus(config);
-  if (items.length < 2 || document.querySelector(".hp-panel")) return;
-  const panel = insertPanel(document.body);
-  panel.classList.add("hp-panel-floating");
-  panel.querySelector(".hp-title").textContent = "Hiper basket";
-  panel.querySelector(".hp-state").textContent = "a comparar";
-  try {
-    const payload = await postJson(`${apiBase}/api/v1/basket/compare`, {
-      retailer,
-      items
-    }, voterId);
-    renderBasketPanel(panel, payload);
-  } catch (error) {
-    renderError(panel, error.message || "Nao foi possivel comparar.");
-  }
-}
-
 async function main() {
-  const retailerPage = detectRetailer();
-  if (!retailerPage) return;
+  const page = detectPage();
+  if (!page) return;
+  if (document.querySelector(".hp-panel")) return;
   const [{ apiBase: configuredApiBase }, voterId] = await Promise.all([
     getConfig(),
     getVoterId()
   ]);
   const apiBase = configuredApiBase.replace(/\/$/, "");
-  const page = detectPage();
-  if (!page) {
-    await renderBasketIfUseful(retailerPage.retailer, retailerPage.config, apiBase, voterId);
-    return;
-  }
-  if (document.querySelector(".hp-panel")) return;
 
   const panel = insertPanel(findAnchor(page.config));
   const base = `${apiBase}/api/v1/products/${page.retailer}/${page.sku}`;
