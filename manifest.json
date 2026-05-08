@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Hiper Prices",
+  "description": "Show Hiper price history and cross-retailer comparisons on supermarket product pages.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://hiper-prices.mglopes.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.continente.pt/*",
+        "https://www.auchan.pt/*",
+        "https://www.pingodoce.pt/*"
+      ],
+      "js": ["src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
