@@ -246,6 +246,46 @@
   fill: #637282;
 }
 
+.hp-match-row {
+  position: relative;
+}
+
+.hp-vote {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.hp-vote-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid #d1d8df;
+  border-radius: 999px;
+  color: #637282;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.hp-vote-btn:hover { background: #eef2f5; color: #1f2933; }
+.hp-vote-btn:disabled { opacity: 0.6; cursor: wait; }
+.hp-vote-btn.hp-vote-up.hp-vote-active {
+  background: #e2f1e9;
+  border-color: #2c8a5b;
+  color: #2c8a5b;
+  font-weight: 600;
+}
+.hp-vote-btn.hp-vote-down.hp-vote-active {
+  background: #fbe4e4;
+  border-color: #c0392b;
+  color: #c0392b;
+  font-weight: 600;
+}
+
 @media (max-width: 560px) {
   .hp-panel,
   .hp-panel-floating {
