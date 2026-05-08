@@ -1,6 +1,6 @@
 .hp-panel {
   box-sizing: border-box;
-  width: min(100%, 420px);
+  width: 100%;
   margin: 16px 0;
   border: 1px solid #d5d9de;
   border-radius: 8px;
@@ -103,14 +103,18 @@
 .hp-match-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 10px;
-  padding: 9px 10px;
+  grid-template-areas:
+    "name unit"
+    "footer footer";
+  gap: 4px 10px;
+  padding: 8px 10px;
   border: 1px solid #e1e6eb;
   border-radius: 7px;
   background: #fbfcfd;
 }
 
-.hp-match-list a {
+.hp-match-link {
+  grid-area: name;
   min-width: 0;
   color: inherit;
   text-decoration: none;
@@ -129,20 +133,28 @@
   overflow-wrap: anywhere;
 }
 
-/* Headline number: €/quantity. Mirrors the web UI's hierarchy where
-   the per-unit price is what the user actually compares. */
+/* Headline number: €/quantity. Aligned with the name on the top row. */
 .hp-match-unit-price {
-  grid-column: 2;
-  justify-self: end;
+  grid-area: unit;
+  align-self: start;
   font-size: 15px;
   font-weight: 700;
   color: #1f2933;
   white-space: nowrap;
 }
 
+/* Single footer row with diff + absolute price + actions, wrapping
+   only when the actions don't fit. Most rows fit on one line. */
+.hp-match-footer {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 2px;
+}
+
 .hp-match-price {
-  grid-column: 1 / -1;
-  justify-self: end;
   font-weight: 500;
   font-size: 12px;
   color: #637282;
@@ -150,7 +162,6 @@
 }
 
 .hp-saving {
-  grid-column: 1 / -1;
   font-size: 12px;
 }
 
@@ -265,12 +276,41 @@
   position: relative;
 }
 
-.hp-vote {
-  display: flex;
+/* Inside the footer: actions sit on the right, diff fills the rest.
+   The previous full-row positioning is gone — actions are inline now. */
+.hp-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-  margin-top: 4px;
-  grid-column: 1 / -1;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.hp-cart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  background: #2d6cdf;
+  border: 1px solid #2d6cdf;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.hp-cart-btn:hover { background: #1f56c2; border-color: #1f56c2; }
+.hp-cart-btn:disabled { opacity: 0.7; cursor: default; }
+.hp-cart-btn.hp-cart-ok {
+  background: #2c8a5b;
+  border-color: #2c8a5b;
+}
+.hp-cart-btn.hp-cart-err {
+  background: #fbe4e4;
+  border-color: #c0392b;
+  color: #c0392b;
 }
 
 .hp-vote-btn {

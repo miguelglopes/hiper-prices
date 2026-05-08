@@ -244,25 +244,36 @@ function renderMatchList(items, emptyLabel) {
         const unitPriceLabel = pp != null && unit
           ? `${formatEuro(pp)}/${unit}`
           : "";
+        // 2-row card. Top row: retailer · name | €/L. Bottom row:
+        // diff (left) · absolute price · actions (right). Saves ~2
+        // rows of vertical space per card vs. the previous layout
+        // where each piece had its own line.
         return `
         <li class="hp-match-row">
-          <a href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
+          <a class="hp-match-link" href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
             <span class="hp-retailer">${item.retailer}</span>
             <span class="hp-match-name">${item.name || item.sku}</span>
           </a>
           ${unitPriceLabel
             ? `<span class="hp-match-unit-price">${unitPriceLabel}</span>`
             : ""}
-          <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
-          <span class="${deltaClass(delta.value)}">${deltaLabel(delta.value, delta.unitSuffix)}</span>
-          <span class="hp-vote">
-            <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
-                    data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
-                    title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
-            <button type="button" class="hp-vote-btn hp-vote-down${downActive}"
-                    data-vote="-1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
-                    title="Não é igual / má alternativa">👎 ${fb.down}</button>
-          </span>
+          <div class="hp-match-footer">
+            <span class="${deltaClass(delta.value)}">${deltaLabel(delta.value, delta.unitSuffix)}</span>
+            <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
+            <span class="hp-actions">
+              <button type="button" class="hp-cart-btn"
+                      data-peer-retailer="${item.retailer}"
+                      data-peer-sku="${item.sku}"
+                      data-peer-url="${item.product_url || ''}"
+                      title="Adicionar ao carrinho ${item.retailer}">+ carrinho</button>
+              <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
+                      data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
+                      title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
+              <button type="button" class="hp-vote-btn hp-vote-down${downActive}"
+                      data-vote="-1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
+                      title="Não é igual / má alternativa">👎 ${fb.down}</button>
+            </span>
+          </div>
         </li>
         `;
       }).join("")}
@@ -386,6 +397,79 @@ function attachVoteHandlers(panel, ctx) {
   });
 }
 
+function sendAddToCart(payload) {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+      resolve({ ok: false, reason: "no_runtime" });
+      return;
+    }
+    chrome.runtime.sendMessage({ type: "hp:addToCart", ...payload }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, reason: "runtime_error", message: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { ok: false, reason: "no_response" });
+    });
+  });
+}
+
+function setCartBtnState(btn, state) {
+  const original = btn.dataset.originalText || btn.textContent;
+  btn.dataset.originalText = original;
+  btn.classList.remove("hp-cart-ok", "hp-cart-err");
+  switch (state.kind) {
+    case "loading":
+      btn.disabled = true;
+      btn.textContent = "...";
+      break;
+    case "ok":
+      btn.disabled = true;
+      btn.textContent = "✓ adicionado";
+      btn.classList.add("hp-cart-ok");
+      break;
+    case "err":
+      btn.disabled = false;
+      btn.textContent = state.label || "✗ falhou";
+      btn.title = state.title || "Não foi possível adicionar.";
+      btn.classList.add("hp-cart-err");
+      break;
+    default:
+      btn.disabled = false;
+      btn.textContent = original;
+  }
+}
+
+function attachCartHandlers(panel) {
+  panel.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".hp-cart-btn");
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    const retailer = btn.dataset.peerRetailer;
+    const sku = btn.dataset.peerSku;
+    const productUrl = btn.dataset.peerUrl;
+    setCartBtnState(btn, { kind: "loading" });
+    const result = await sendAddToCart({ retailer, sku, productUrl });
+    if (result.ok) {
+      setCartBtnState(btn, { kind: "ok" });
+      return;
+    }
+    if (result.reason === "postal_code") {
+      setCartBtnState(btn, {
+        kind: "err",
+        label: "define loja",
+        title: "Pingo Doce exige escolher loja primeiro. Abre pingodoce.pt e seleciona uma loja.",
+      });
+      return;
+    }
+    setCartBtnState(btn, {
+      kind: "err",
+      label: "✗ falhou",
+      title: result.message || result.reason || "Erro desconhecido",
+    });
+    console.warn("hiper-prices add-to-cart failed", result);
+  });
+}
+
 function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx) {
   const latest = productPayload.latest;
   const summary = productPayload.history_summary;
@@ -394,21 +478,15 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
   const history = historyPayload?.history || [];
 
   panel.querySelector(".hp-state").textContent = latest ? "com dados" : "sem dados";
+  // 'Ultima leitura' deliberately not shown — a stale read is misleading
+  // when the price hasn't changed (the value is still current). 30d
+  // min/max/trend duplicate what the chart's y-axis labels already show.
   panel.querySelector(".hp-body").innerHTML = `
     <div class="hp-current">
       <div>
         <span class="hp-label">Preco registado</span>
         <strong>${formatEuro(latest?.price)}</strong>
       </div>
-      <div>
-        <span class="hp-label">Ultima leitura</span>
-        <strong>${formatDate(latest?.observed_at)}</strong>
-      </div>
-    </div>
-    <div class="hp-stats">
-      <span>30d min ${formatEuro(summary.min_price_30d)}</span>
-      <span>30d max ${formatEuro(summary.max_price_30d)}</span>
-      <span>tendencia ${trendLabel(summary.trend_30d)}</span>
     </div>
     <section class="hp-chart-section">
       <div class="hp-chart-buttons">${renderChartButtons("1m")}</div>
@@ -428,6 +506,7 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
   `;
   attachChart(panel, history);
   if (ctx) attachVoteHandlers(panel, ctx);
+  attachCartHandlers(panel);
 }
 
 function renderError(panel, message) {
