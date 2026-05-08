@@ -244,21 +244,25 @@ function renderMatchList(items, emptyLabel) {
         const unitPriceLabel = pp != null && unit
           ? `${formatEuro(pp)}/${unit}`
           : "";
-        // 2-row card. Top row: retailer · name | €/L. Bottom row:
-        // diff (left) · absolute price · actions (right). Saves ~2
-        // rows of vertical space per card vs. the previous layout
-        // where each piece had its own line.
+        // 2-row card. Top row: name | headline (diff above €/L).
+        // Bottom row: absolute price + actions. Diff is the loudest
+        // element — that's the actual decision-driver.
+        const diffLabel = deltaLabel(delta.value, delta.unitSuffix);
         return `
         <li class="hp-match-row">
           <a class="hp-match-link" href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
             <span class="hp-retailer">${item.retailer}</span>
             <span class="hp-match-name">${item.name || item.sku}</span>
           </a>
-          ${unitPriceLabel
-            ? `<span class="hp-match-unit-price">${unitPriceLabel}</span>`
-            : ""}
+          <div class="hp-match-headline">
+            ${diffLabel
+              ? `<span class="${deltaClass(delta.value)}">${diffLabel}</span>`
+              : ""}
+            ${unitPriceLabel
+              ? `<span class="hp-match-unit-price">${unitPriceLabel}</span>`
+              : ""}
+          </div>
           <div class="hp-match-footer">
-            <span class="${deltaClass(delta.value)}">${deltaLabel(delta.value, delta.unitSuffix)}</span>
             <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
             <span class="hp-actions">
               <button type="button" class="hp-cart-btn"
