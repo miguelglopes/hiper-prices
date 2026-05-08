@@ -195,7 +195,7 @@ function sortByPrice(matches, { onlyCheaper = false } = {}) {
   }
   return filtered
     .sort((a, b) => score(a) - score(b))
-    .slice(0, 5);
+    .slice(0, 8);
 }
 
 function deltaLabel(delta, unitSuffix = "") {
@@ -478,7 +478,12 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
   const latest = productPayload.latest;
   const summary = productPayload.history_summary;
   const sameAll = sortByPrice(matchesPayload.same_product || []);
-  const comparableCheaper = sortByPrice(matchesPayload.comparable_alternatives || [], { onlyCheaper: true });
+  // Show all comparable alternatives, sorted cheapest €/L first. The
+  // diff badge's colour already conveys cheaper / pricier — filtering
+  // pricier ones out (the previous `onlyCheaper: true` behaviour) hid
+  // valid matches like a peer-retailer's same-category product whose
+  // unit price happens to be a cent higher.
+  const comparableCheaper = sortByPrice(matchesPayload.comparable_alternatives || []);
   const history = historyPayload?.history || [];
 
   panel.querySelector(".hp-state").textContent = latest ? "com dados" : "sem dados";
@@ -502,7 +507,7 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
     </section>
     <section>
       <h2>Alternativas</h2>
-      ${renderMatchList(comparableCheaper, "Sem alternativa mais barata.")}
+      ${renderMatchList(comparableCheaper, "Sem alternativas comparáveis.")}
     </section>
     <a class="hp-detail-link" href="${productPayload.links.html}" target="_blank" rel="noopener noreferrer">
       Ver historico completo
