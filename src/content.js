@@ -487,9 +487,11 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
   const history = historyPayload?.history || [];
 
   panel.querySelector(".hp-state").textContent = latest ? "com dados" : "sem dados";
-  // 'Ultima leitura' deliberately not shown — a stale read is misleading
-  // when the price hasn't changed (the value is still current). 30d
-  // min/max/trend duplicate what the chart's y-axis labels already show.
+  // Hide the chart entirely when there's <2 observations — a single-point
+  // chart with the value floating in the middle looks broken. 'Ultima
+  // leitura' / 30d stats are intentionally absent (stale read is
+  // misleading; min/max are visible on the chart's y-axis labels).
+  const showChart = history.length >= 2;
   panel.querySelector(".hp-body").innerHTML = `
     <div class="hp-current">
       <div>
@@ -497,10 +499,12 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
         <strong>${formatEuro(latest?.price)}</strong>
       </div>
     </div>
-    <section class="hp-chart-section">
-      <div class="hp-chart-buttons">${renderChartButtons("1m")}</div>
-      <div class="hp-chart-container"></div>
-    </section>
+    ${showChart
+      ? `<section class="hp-chart-section">
+           <div class="hp-chart-buttons">${renderChartButtons("1m")}</div>
+           <div class="hp-chart-container"></div>
+         </section>`
+      : `<p class="hp-muted">Histórico insuficiente para gráfico.</p>`}
     <section>
       <h2>Mesmo produto</h2>
       ${renderMatchList(sameAll, "Sem equivalentes noutros supermercados.")}
@@ -513,7 +517,7 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
       Ver historico completo
     </a>
   `;
-  attachChart(panel, history);
+  if (showChart) attachChart(panel, history);
   if (ctx) attachVoteHandlers(panel, ctx);
   attachCartHandlers(panel);
 }
