@@ -8,6 +8,12 @@ session cookies for that retailer (no login required by the extension
 itself; user logs in to each retailer normally if they want a persistent
 cart).
 
+## Install
+
+Sideload-ready `.zip` packages are published on the
+[Releases page](https://github.com/miguelglopes/hiper-prices/releases) —
+download, unzip, and load unpacked. For development from source, see below.
+
 ## Load locally
 
 1. Open `chrome://extensions`.

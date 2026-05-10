@@ -1,0 +1,79 @@
+name: Release extension zip
+
+# This workflow lives in the PUBLIC mirror repo (miguelglopes/hiper-prices),
+# synced there from the private monorepo via subtree split. It triggers when
+# the private repo's sync workflow pushes a `v*` tag (one per manifest version
+# bump), builds a sideload-ready zip, and creates a GitHub Release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re-)release'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Tag: $TAG"
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+
+      - name: Build zip
+        id: zip
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          DIR="hiper-prices"
+          ZIP="${GITHUB_WORKSPACE}/hiper-prices-${TAG}.zip"
+          mkdir -p "/tmp/${DIR}"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            ./ "/tmp/${DIR}/"
+          (cd /tmp && zip -r "${ZIP}" "${DIR}")
+          echo "path=hiper-prices-${TAG}.zip" >> "$GITHUB_OUTPUT"
+          ls -la "${ZIP}"
+          echo "--- contents ---"
+          unzip -l "${ZIP}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > /tmp/notes.md <<'EOF'
+          Sideload-ready Manifest V3 extension package.
+
+          **Install:**
+          1. Download the `.zip` below.
+          2. Unzip it (it expands into a `hiper-prices/` folder).
+          3. In Chrome, open `chrome://extensions` and enable Developer mode.
+          4. Click "Load unpacked" and select the `hiper-prices/` folder.
+
+          By default the extension talks to `https://hiper-prices.mglopes.com`.
+          For local development against your own backend, set the `apiBase`
+          key in extension storage (e.g. via the extension's DevTools panel)
+          to `http://127.0.0.1:5000`.
+          EOF
+          gh release create "${{ steps.tag.outputs.name }}" \
+            --title "${{ steps.tag.outputs.name }}" \
+            --notes-file /tmp/notes.md \
+            "${{ steps.zip.outputs.path }}"
