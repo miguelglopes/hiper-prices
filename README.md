@@ -13,7 +13,7 @@ cart).
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Click "Load unpacked".
-4. Select this `extension/` directory.
+4. Select the cloned directory.
 
 The content script currently supports:
 
@@ -23,3 +23,9 @@ The content script currently supports:
 
 By default it reads from `https://hiper-prices.mglopes.com`. For local
 development, set `apiBase` in extension storage to `http://127.0.0.1:5000`.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, hobby,
+research, and non-profit use. Commercial use requires a separate
+license.
