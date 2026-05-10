@@ -78,3 +78,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     );
   return true;
 });
+
+// Bulk add via long-running port so the UI can stream progress (and so a
+// 5-item batch doesn't time out a single sendMessage). Lines arrive in one
+// "start" message; we run them serially, post a "progress" + "result" per
+// line, then "done".
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "hp:bulkAddToCart") return;
+  port.onMessage.addListener(async (msg) => {
+    if (msg?.type !== "start") return;
+    const lines = Array.isArray(msg.lines) ? msg.lines : [];
+    let done = 0;
+    for (const line of lines) {
+      let result;
+      try { result = await addToCart(line); }
+      catch (err) {
+        result = { ok: false, reason: "exception", message: String(err.message || err) };
+      }
+      done += 1;
+      try {
+        port.postMessage({ type: "result", result, line });
+        port.postMessage({ type: "progress", done, total: lines.length });
+      } catch {
+        // port closed by the other side mid-batch — bail out.
+        return;
+      }
+    }
+    try { port.postMessage({ type: "done", total: lines.length }); } catch { /* closed */ }
+  });
+});
