@@ -120,6 +120,29 @@
   text-decoration: none;
 }
 
+.hp-match-row-with-thumb .hp-match-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hp-match-thumb {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #e1e6eb;
+  border-radius: 6px;
+  padding: 1px;
+}
+
+.hp-match-link-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hp-retailer {
   display: inline-block;
   margin-right: 6px;

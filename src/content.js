@@ -268,11 +268,17 @@ function renderMatchList(items, emptyLabel) {
         // 2-row card. Top row: name | headline (diff above €/L).
         // Bottom row: absolute price + actions. Diff is the loudest
         // element — that's the actual decision-driver.
+        const thumbHtml = item.thumb_url
+          ? `<img class="hp-match-thumb" src="${item.thumb_url}" alt="" loading="lazy" width="36" height="36">`
+          : "";
         return `
-        <li class="hp-match-row">
+        <li class="hp-match-row${item.thumb_url ? " hp-match-row-with-thumb" : ""}">
           <a class="hp-match-link" href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
-            <span class="hp-retailer">${item.retailer}</span>
-            <span class="hp-match-name">${item.name || item.sku}</span>
+            ${thumbHtml}
+            <span class="hp-match-link-text">
+              <span class="hp-retailer">${item.retailer}</span>
+              <span class="hp-match-name">${item.name || item.sku}</span>
+            </span>
           </a>
           <div class="hp-match-headline">
             ${renderDeltaBadge(delta)}
