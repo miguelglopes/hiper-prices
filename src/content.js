@@ -1,36 +1,54 @@
 const DEFAULT_API_BASE = "https://hiper-prices.mglopes.com";
 
+// Real cart paths verified via Playwright on 2026-05-09:
+//   continente: redirects /cart -> /checkout/carrinho/
+//   auchan:     /pt/cart -> /pt/carrinho-compras
+//   pingodoce:  Cart-Show controller (no vanity alias found)
+// Each pattern keeps a fallback or two in case the retailer adds an alias
+// (e.g. `/cart`) so we don't silently miss the cart on URL drift.
 const RETAILERS = {
   "www.continente.pt": {
     id: "continente",
+    label: "Continente",
     skuPattern: /\/produto\/.+-(\d+)\.html(?:[?#].*)?$/,
     anchors: [
       ".pwc-tile--price-primary",
       ".product-detail .prices",
       ".product-info",
       "main"
-    ]
+    ],
+    basketPathPattern: /^\/(checkout\/carrinho|carrinho|cart)(\/|$|\?)/i
   },
   "www.auchan.pt": {
     id: "auchan",
+    label: "Auchan",
     skuPattern: /\/pt\/.+\/(\d+)\.html(?:[?#].*)?$/,
     anchors: [
       ".product-detail .prices",
       ".product-detail .price",
       ".product-detail",
       ".product-wrapper"
-    ]
+    ],
+    basketPathPattern: /^\/(?:pt\/)?(carrinho-compras|carrinho|cart)(\/|$|\?)/i
   },
   "www.pingodoce.pt": {
     id: "pingodoce",
+    label: "Pingo Doce",
     skuPattern: /-(\d+)\.html(?:[?#].*)?$/,
     anchors: [
       ".product-price",
       ".product-wrapper",
       ".product-detail",
       "main"
-    ]
+    ],
+    basketPathPattern: /^\/(?:on\/demandware\.store\/Sites-pingo-doce-Site\/[^/]+\/Cart-Show|carrinho|cart|cesto)(\/|$|\?)/i
   }
+};
+
+const RETAILER_LABELS = {
+  continente: "Continente",
+  auchan: "Auchan",
+  pingodoce: "Pingo Doce"
 };
 
 function getConfig() {
@@ -198,21 +216,24 @@ function sortByPrice(matches, { onlyCheaper = false } = {}) {
     .slice(0, 8);
 }
 
-function deltaLabel(delta, unitSuffix = "") {
-  if (delta === null || delta === undefined) return "";
-  const value = Number(delta);
-  if (value === 0) return "mesmo preco";
+// Builds the headline diff badge for a match row. Returns an HTML
+// string (or empty string) so the caller can drop it inline. Three
+// states:
+//  - cheaper / pricier → "-0,07 €/L" or "+0,07 €/L", color-coded text;
+//  - equal             → small grey "=" chip with tooltip carrying the
+//                        precise meaning ("mesmo €/L", "mesmo preço")
+//                        — way less noise than the words at row scale.
+function renderDeltaBadge(delta) {
+  if (delta.value === null || delta.value === undefined) return "";
+  const value = Number(delta.value);
+  if (value === 0) {
+    const label = delta.unitSuffix ? `mesmo €${delta.unitSuffix}` : "mesmo preço";
+    return `<span class="hp-saving hp-saving-equal" title="${label}" aria-label="${label}">=</span>`;
+  }
   const formatted = formatEuro(Math.abs(value));
-  return value < 0
-    ? `-${formatted}${unitSuffix}`
-    : `+${formatted}${unitSuffix}`;
-}
-
-function deltaClass(delta) {
-  if (delta === null || delta === undefined) return "hp-saving hp-saving-flat";
-  if (Number(delta) < 0) return "hp-saving hp-saving-cheaper";
-  if (Number(delta) > 0) return "hp-saving hp-saving-pricier";
-  return "hp-saving hp-saving-flat";
+  const sign = value < 0 ? "-" : "+";
+  const cls = value < 0 ? "hp-saving hp-saving-cheaper" : "hp-saving hp-saving-pricier";
+  return `<span class="${cls}">${sign}${formatted}${delta.unitSuffix}</span>`;
 }
 
 // Prefer €/unit comparison when both sides have it (units already match
@@ -247,7 +268,6 @@ function renderMatchList(items, emptyLabel) {
         // 2-row card. Top row: name | headline (diff above €/L).
         // Bottom row: absolute price + actions. Diff is the loudest
         // element — that's the actual decision-driver.
-        const diffLabel = deltaLabel(delta.value, delta.unitSuffix);
         return `
         <li class="hp-match-row">
           <a class="hp-match-link" href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
@@ -255,9 +275,7 @@ function renderMatchList(items, emptyLabel) {
             <span class="hp-match-name">${item.name || item.sku}</span>
           </a>
           <div class="hp-match-headline">
-            ${diffLabel
-              ? `<span class="${deltaClass(delta.value)}">${diffLabel}</span>`
-              : ""}
+            ${renderDeltaBadge(delta)}
             ${unitPriceLabel
               ? `<span class="hp-match-unit-price">${unitPriceLabel}</span>`
               : ""}
@@ -270,6 +288,9 @@ function renderMatchList(items, emptyLabel) {
                       data-peer-sku="${item.sku}"
                       data-peer-url="${item.product_url || ''}"
                       title="Adicionar ao carrinho ${item.retailer}">+ carrinho</button>
+              <span class="hp-vote-help" tabindex="0"
+                    title="É uma boa sugestão?"
+                    aria-label="É uma boa sugestão?">?</span>
               <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
                       data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
                       title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
@@ -474,6 +495,40 @@ function attachCartHandlers(panel) {
   });
 }
 
+// Nutrition table for the panel. Renders only when at least one
+// per-100g value is set. Mirrors the rows from product.html so the
+// extension and web UI stay in sync (per CLAUDE.md parity rule).
+function renderNutrition(nutrition) {
+  if (!nutrition) return "";
+  const rows = [
+    ["Energia", nutrition.energy_kcal, "kcal", false],
+    ["Lípidos", nutrition.fat_g, "g", false],
+    ["dos quais saturados", nutrition.sat_fat_g, "g", true],
+    ["Hidratos de carbono", nutrition.carbs_g, "g", false],
+    ["dos quais açúcares", nutrition.sugars_g, "g", true],
+    ["Fibra", nutrition.fiber_g, "g", false],
+    ["Proteínas", nutrition.protein_g, "g", false],
+    ["Sal", nutrition.salt_g, "g", false],
+  ].filter(([, v]) => v !== null && v !== undefined);
+  if (!rows.length) return "";
+  const fmt = new Intl.NumberFormat("pt-PT", { maximumFractionDigits: 2 });
+  return `
+    <details class="hp-nutrition">
+      <summary>Informação nutricional <span class="hp-nutrition-hint">por 100 g/ml</span></summary>
+      <table class="hp-nutrition-table">
+        <tbody>
+          ${rows.map(([label, value, unit, sub]) => `
+            <tr${sub ? ' class="hp-nutrient-sub"' : ""}>
+              <th>${label}</th>
+              <td>${fmt.format(Number(value))} ${unit}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </details>
+  `;
+}
+
 function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx) {
   const latest = productPayload.latest;
   const summary = productPayload.history_summary;
@@ -505,6 +560,7 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
            <div class="hp-chart-container"></div>
          </section>`
       : `<p class="hp-muted">Histórico insuficiente para gráfico.</p>`}
+    ${renderNutrition(productPayload.nutrition)}
     <section>
       <h2>Mesmo produto</h2>
       ${renderMatchList(sameAll, "Sem equivalentes noutros supermercados.")}
@@ -529,7 +585,395 @@ function renderError(panel, message) {
   `;
 }
 
+// --- basket page ---------------------------------------------------------
+
+function detectBasketPage() {
+  const config = RETAILERS[window.location.hostname];
+  if (!config || !config.basketPathPattern) return null;
+  if (!config.basketPathPattern.test(window.location.pathname)) return null;
+  // PDP detection wins if both somehow match (shouldn't happen, but be
+  // defensive — a PDP URL shouldn't pass basketPathPattern anyway).
+  if (config.skuPattern.test(window.location.pathname)) return null;
+  return { retailer: config.id, config };
+}
+
+// Walk the basket DOM and return [{sku, quantity, name}]. Robust strategy:
+// any anchor whose href matches the retailer's PDP skuPattern is treated
+// as a line-item link. We dedupe by sku. Quantity comes from a qty input
+// scoped to *this* line item only — see closestLineItem for the bound.
+function scrapeBasketItems(config) {
+  const found = new Map();   // sku -> { sku, quantity, name }
+  for (const a of document.querySelectorAll('a[href]')) {
+    let pathname;
+    try { pathname = new URL(a.href, window.location.origin).pathname; }
+    catch { continue; }
+    const m = pathname.match(config.skuPattern);
+    if (!m) continue;
+    const sku = m[1];
+    if (found.has(sku)) continue;
+
+    const lineEl = closestLineItem(a, config.skuPattern);
+    const qty = readQuantity(lineEl) ?? 1;
+    const name = (a.textContent || "").trim().replace(/\s+/g, " ").slice(0, 200) || null;
+    found.set(sku, { sku, quantity: qty, name });
+  }
+  return [...found.values()];
+}
+
+function closestLineItem(node, skuPattern) {
+  // Walk upward only while the ancestor contains a *single* SKU's worth
+  // of PDP links — i.e., still scoped to this one line item. Once the
+  // walker encloses ≥2 distinct SKUs we've stepped into the cart-list
+  // container, so back off one level. This stops a qty-less item from
+  // borrowing a sibling's qty input via a shared parent.
+  let walker = node.parentElement;
+  let last = node;
+  for (let i = 0; i < 12 && walker && walker !== document.body; i++) {
+    const distinct = new Set();
+    for (const a of walker.querySelectorAll("a[href]")) {
+      let pathname;
+      try { pathname = new URL(a.href, window.location.origin).pathname; }
+      catch { continue; }
+      const m = pathname.match(skuPattern);
+      if (m) distinct.add(m[1]);
+      if (distinct.size > 1) break;
+    }
+    if (distinct.size > 1) return last;
+    last = walker;
+    walker = walker.parentElement;
+  }
+  return last;
+}
+
+function readQuantity(el) {
+  if (!el) return null;
+  const input = el.querySelector(
+    'input[type="number"], input[name*="quantity" i], input[name*="qty" i], [data-quantity]'
+  );
+  if (input) {
+    const raw = input.value || input.getAttribute("value") || input.dataset?.quantity;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  // Fallback: text like "x2" or "2 unid"
+  const text = (el.textContent || "").match(/(?:^|[^\d])(\d{1,3})\s*(?:un|unid|x|×)\b/i)
+    || (el.textContent || "").match(/(?:^|\b)x\s*(\d{1,3})\b/i);
+  if (text) {
+    const n = Number(text[1]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function insertBasketPanel() {
+  const panel = document.createElement("aside");
+  panel.className = "hp-panel hp-basket-panel hp-panel-floating";
+  panel.innerHTML = `
+    <div class="hp-header">
+      <span class="hp-title">Hiper Prices · cesto</span>
+      <span class="hp-state">a calcular</span>
+    </div>
+    <div class="hp-body"></div>
+  `;
+  document.body.appendChild(panel);
+  return panel;
+}
+
+// View state held outside the render so toggle clicks survive re-renders
+// triggered by basket DOM mutations.
+const basketView = {
+  includeComparable: true,
+  excludeMissing: false,
+  expandedPeer: null,
+};
+
+function renderBasketPanel(panel, payload, ctx) {
+  const { retailer, baseline, peers, recommended } = payload;
+  panel.querySelector(".hp-state").textContent =
+    `${baseline.items.length} ${baseline.items.length === 1 ? "item" : "itens"}`;
+
+  const totalKey = (peer) => {
+    if (basketView.excludeMissing) {
+      return basketView.includeComparable ? peer.total_with_comparable : peer.total_same;
+    }
+    return basketView.includeComparable
+      ? peer.total_with_comparable_filled
+      : peer.total_same_filled;
+  };
+  const missingKey = (peer) =>
+    basketView.includeComparable ? peer.missing_any_skus : peer.missing_same_skus;
+
+  const orderedPeers = peers.slice().sort((a, b) => totalKey(a) - totalKey(b));
+  const winner = orderedPeers.find((p) => totalKey(p) < baseline.total) || null;
+
+  panel.querySelector(".hp-body").innerHTML = `
+    <div class="hp-current">
+      <div>
+        <span class="hp-label">${RETAILER_LABELS[retailer] || retailer} · cesto</span>
+        <strong>${formatEuro(baseline.total)}</strong>
+      </div>
+      <div>
+        <span class="hp-label">${baseline.items.length} produtos</span>
+      </div>
+    </div>
+    ${recommended
+      ? `<div class="hp-basket-reco">
+           <strong>Mais barato no total: ${RETAILER_LABELS[recommended.retailer] || recommended.retailer}</strong>
+           <span>Poupa ${formatEuro(recommended.savings)}${
+             recommended.missing_count
+               ? ` · ${recommended.missing_count} ${recommended.missing_count === 1 ? "produto sem correspondência" : "produtos sem correspondência"}`
+               : ""
+           }</span>
+         </div>`
+      : `<div class="hp-basket-reco hp-basket-reco-flat">
+           <strong>Sem retalhista mais barato no total</strong>
+           <span>Compara linha a linha em baixo.</span>
+         </div>`}
+    <div class="hp-basket-toggles">
+      <label><input type="checkbox" data-toggle="includeComparable" ${
+        basketView.includeComparable ? "checked" : ""
+      }> Incluir alternativas similares</label>
+      <label><input type="checkbox" data-toggle="excludeMissing" ${
+        basketView.excludeMissing ? "checked" : ""
+      }> Excluir produtos sem correspondência (recalcular)</label>
+    </div>
+    <div class="hp-basket-peers">
+      ${orderedPeers.map((peer) => renderPeerCard(peer, baseline, totalKey(peer), missingKey(peer), winner === peer)).join("")}
+    </div>
+  `;
+  attachBasketHandlers(panel, payload, ctx);
+}
+
+function renderPeerCard(peer, baseline, total, missingSkus, isWinner) {
+  const delta = total - baseline.total;
+  const deltaText = delta === 0 ? "mesmo preço"
+    : delta < 0 ? `poupas ${formatEuro(Math.abs(delta))}`
+    : `mais ${formatEuro(delta)}`;
+  const deltaClassName = delta < 0 ? "hp-saving-cheaper"
+    : delta > 0 ? "hp-saving-pricier"
+    : "hp-saving-flat";
+  const expanded = basketView.expandedPeer === peer.retailer;
+  const matchedItems = peer.items.filter(
+    (it) => it.same_product || (basketView.includeComparable && it.comparable_alternative)
+  );
+  return `
+    <section class="hp-peer-card${isWinner ? " hp-peer-winner" : ""}" data-peer="${peer.retailer}">
+      <header class="hp-peer-head">
+        <div>
+          <span class="hp-peer-name">${RETAILER_LABELS[peer.retailer] || peer.retailer}</span>
+          ${isWinner ? `<span class="hp-peer-badge">mais barato</span>` : ""}
+        </div>
+        <div class="hp-peer-totals">
+          <strong>${formatEuro(total)}</strong>
+          <span class="hp-saving ${deltaClassName}">${deltaText}</span>
+        </div>
+      </header>
+      <div class="hp-peer-meta">
+        ${missingSkus.length
+          ? `<span class="hp-peer-missing">${missingSkus.length} sem correspondência</span>`
+          : `<span class="hp-peer-allmatched">todos com correspondência</span>`}
+        <button type="button" class="hp-peer-bulk-btn" data-peer="${peer.retailer}"
+                ${matchedItems.length === 0 ? "disabled" : ""}>
+          + adicionar ${matchedItems.length} ao carrinho ${RETAILER_LABELS[peer.retailer] || peer.retailer}
+        </button>
+        <button type="button" class="hp-peer-toggle" data-peer="${peer.retailer}">
+          ${expanded ? "ocultar produtos" : "ver produtos"}
+        </button>
+      </div>
+      ${expanded ? renderPeerItems(peer, baseline) : ""}
+    </section>
+  `;
+}
+
+function renderPeerItems(peer, baseline) {
+  const baselineBySku = new Map(baseline.items.map((it) => [it.sku, it]));
+  return `
+    <ul class="hp-peer-items">
+      ${peer.items.map((item) => {
+        const base = baselineBySku.get(item.sku);
+        const same = item.same_product;
+        const comp = item.comparable_alternative;
+        const chosen = same || (basketView.includeComparable ? comp : null);
+        const status = same ? "mesmo produto"
+          : (basketView.includeComparable && comp) ? "alternativa similar"
+          : "sem correspondência";
+        const statusClass = same ? "hp-peer-status-same"
+          : (basketView.includeComparable && comp) ? "hp-peer-status-comp"
+          : "hp-peer-status-missing";
+        const chosenLine = chosen?.line_total;
+        const baseLine = base?.line_total;
+        const lineDelta = chosenLine != null && baseLine != null
+          ? chosenLine - baseLine
+          : null;
+        return `
+        <li class="hp-peer-item">
+          <div class="hp-peer-item-name">
+            ${chosen?.detail_url
+              ? `<a href="${chosen.detail_url}" target="_blank" rel="noopener noreferrer">${chosen.name || item.sku}</a>`
+              : `<span class="hp-muted">${base?.name || item.sku}</span>`}
+            <span class="hp-peer-item-qty">x${item.quantity}</span>
+          </div>
+          <div class="hp-peer-item-status ${statusClass}">${status}</div>
+          <div class="hp-peer-item-prices">
+            <span class="hp-peer-item-base">${formatEuro(baseLine)}</span>
+            <span class="hp-peer-item-arrow">→</span>
+            <span class="hp-peer-item-peer">${chosen ? formatEuro(chosenLine) : "—"}</span>
+            ${lineDelta != null
+              ? `<span class="hp-saving ${lineDelta < 0 ? "hp-saving-cheaper" : lineDelta > 0 ? "hp-saving-pricier" : "hp-saving-flat"}">${
+                  lineDelta === 0 ? "0,00 €"
+                  : (lineDelta < 0 ? "-" : "+") + formatEuro(Math.abs(lineDelta))
+                }</span>`
+              : ""}
+          </div>
+        </li>`;
+      }).join("")}
+    </ul>
+  `;
+}
+
+function attachBasketHandlers(panel, payload, ctx) {
+  panel.querySelectorAll('input[data-toggle]').forEach((input) => {
+    input.addEventListener("change", () => {
+      basketView[input.dataset.toggle] = input.checked;
+      renderBasketPanel(panel, payload, ctx);
+    });
+  });
+  panel.querySelectorAll(".hp-peer-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const peer = btn.dataset.peer;
+      basketView.expandedPeer = basketView.expandedPeer === peer ? null : peer;
+      renderBasketPanel(panel, payload, ctx);
+    });
+  });
+  panel.querySelectorAll(".hp-peer-bulk-btn").forEach((btn) => {
+    btn.addEventListener("click", () => onBulkAdd(btn, payload));
+  });
+}
+
+async function onBulkAdd(btn, payload) {
+  const peerId = btn.dataset.peer;
+  const peer = payload.peers.find((p) => p.retailer === peerId);
+  if (!peer) return;
+  const lines = peer.items
+    .map((item) => {
+      const chosen = item.same_product
+        || (basketView.includeComparable ? item.comparable_alternative : null);
+      if (!chosen) return null;
+      return {
+        retailer: peerId,
+        sku: chosen.sku,
+        productUrl: chosen.product_url,
+        quantity: Math.max(1, Math.round(item.quantity)),
+      };
+    })
+    .filter(Boolean);
+  if (!lines.length) return;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = `a adicionar 0/${lines.length}...`;
+
+  const result = await sendBulkAddToCart(lines, (done) => {
+    btn.textContent = `a adicionar ${done}/${lines.length}...`;
+  });
+  if (result.ok) {
+    btn.textContent = `✓ ${result.successes.length} adicionados`;
+    btn.classList.add("hp-cart-ok");
+  } else {
+    const okCount = (result.successes || []).length;
+    btn.textContent = okCount
+      ? `parcial: ${okCount}/${lines.length} (${result.failures?.length || 0} falharam)`
+      : "✗ falhou";
+    btn.classList.add("hp-cart-err");
+    btn.disabled = false;
+    console.warn("hiper-prices bulk add failed", result, "(restoring as", original, ")");
+  }
+}
+
+function sendBulkAddToCart(lines, onProgress) {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+      resolve({ ok: false, reason: "no_runtime" });
+      return;
+    }
+    const port = chrome.runtime.connect({ name: "hp:bulkAddToCart" });
+    let done = 0;
+    const successes = [];
+    const failures = [];
+    port.onMessage.addListener((msg) => {
+      if (msg?.type === "progress") {
+        done = msg.done;
+        onProgress?.(done);
+      } else if (msg?.type === "result") {
+        if (msg.result?.ok) successes.push(msg.result);
+        else failures.push(msg.result);
+      } else if (msg?.type === "done") {
+        port.disconnect();
+        resolve({
+          ok: failures.length === 0 && successes.length > 0,
+          successes, failures,
+        });
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      // If we never got "done" (background errored), resolve as failure.
+      if (done < lines.length) {
+        resolve({ ok: false, reason: "disconnect", successes, failures });
+      }
+    });
+    port.postMessage({ type: "start", lines });
+  });
+}
+
+async function runBasketFlow() {
+  const page = detectBasketPage();
+  if (!page) return false;
+  if (document.querySelector(".hp-basket-panel")) return true;
+
+  const [{ apiBase: configuredApiBase }, voterId] = await Promise.all([
+    getConfig(), getVoterId()
+  ]);
+  const apiBase = configuredApiBase.replace(/\/$/, "");
+  const panel = insertBasketPanel();
+
+  let lastSig = null;
+  const refresh = async () => {
+    const items = scrapeBasketItems(page.config);
+    if (!items.length) {
+      renderError(panel, "Cesto vazio (ou não foi possível identificar os produtos).");
+      return;
+    }
+    const sig = items.map((it) => `${it.sku}x${it.quantity}`).sort().join("|");
+    if (sig === lastSig) return;
+    lastSig = sig;
+    panel.querySelector(".hp-state").textContent = "a calcular...";
+    try {
+      const payload = await postJson(
+        `${apiBase}/api/v1/basket/compare`,
+        { retailer: page.retailer, items },
+        voterId
+      );
+      renderBasketPanel(panel, payload, { apiBase, voterId, retailer: page.retailer });
+    } catch (err) {
+      renderError(panel, err.message || "Não foi possível calcular o cesto.");
+    }
+  };
+  await refresh();
+
+  // Re-scrape when the basket DOM changes (qty bumps, removals, SPA loads).
+  // Debounced so we don't refire on every keystroke in the qty input.
+  let timer = null;
+  const observer = new MutationObserver(() => {
+    clearTimeout(timer);
+    timer = setTimeout(refresh, 600);
+  });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true,
+    attributeFilter: ["value", "data-quantity"] });
+
+  return true;
+}
+
 async function main() {
+  if (await runBasketFlow()) return;
   const page = detectPage();
   if (!page) return;
   if (document.querySelector(".hp-panel")) return;

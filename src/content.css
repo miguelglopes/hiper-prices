@@ -193,6 +193,25 @@
   font-size: 13px;
 }
 
+/* Tiny grey "=" chip — visual equivalent of "mesmo €/L". Kept out of
+   the loud cheaper/pricier color slot on purpose. */
+.hp-saving-equal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: #eef0f3;
+  border: 1px solid #dde1e7;
+  color: #637282;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+}
+
 .hp-muted {
   margin: 0;
   color: #637282;
@@ -356,6 +375,29 @@
   font-weight: 600;
 }
 
+.hp-vote-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d1d8df;
+  color: #637282;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  margin-right: 2px;
+}
+.hp-vote-help:hover,
+.hp-vote-help:focus {
+  background: #cfe1f5;
+  color: #2d6cdf;
+  outline: none;
+}
+
 @media (max-width: 560px) {
   .hp-panel,
   .hp-panel-floating {
@@ -371,3 +413,256 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- nutrition (collapsible) --------------------------------------- */
+.hp-nutrition {
+  border: 1px solid #e1e6eb;
+  border-radius: 7px;
+  background: #fbfcfd;
+  overflow: hidden;
+}
+.hp-nutrition > summary {
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  user-select: none;
+}
+.hp-nutrition > summary::-webkit-details-marker { display: none; }
+.hp-nutrition > summary::before {
+  content: "▸";
+  font-size: 0.8em;
+  color: #637282;
+  transition: transform 0.15s ease;
+}
+.hp-nutrition[open] > summary::before { transform: rotate(90deg); }
+.hp-nutrition-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: #637282;
+}
+.hp-nutrition-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.hp-nutrition-table th {
+  padding: 5px 10px;
+  text-align: left;
+  font-weight: 500;
+  color: #17202a;
+  border-top: 1px solid #e7eaee;
+}
+.hp-nutrition-table td {
+  padding: 5px 10px;
+  text-align: right;
+  color: #354454;
+  border-top: 1px solid #e7eaee;
+  font-variant-numeric: tabular-nums;
+}
+.hp-nutrition-table tr.hp-nutrient-sub th {
+  padding-left: 24px;
+  color: #637282;
+  font-weight: 400;
+}
+
+/* --- basket panel --------------------------------------------------- */
+
+.hp-basket-panel.hp-panel-floating {
+  width: 460px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.hp-basket-reco {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e2f1e9, #d4ebe0);
+  border: 1px solid #2c8a5b;
+  color: #145c39;
+}
+.hp-basket-reco strong { font-size: 14px; }
+.hp-basket-reco span { font-size: 12px; color: #2c5040; }
+.hp-basket-reco-flat {
+  background: #eef2f5;
+  border-color: #d5d9de;
+  color: #354454;
+}
+.hp-basket-reco-flat span { color: #637282; }
+
+.hp-basket-toggles {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #354454;
+}
+.hp-basket-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.hp-basket-peers {
+  display: grid;
+  gap: 10px;
+}
+
+.hp-peer-card {
+  border: 1px solid #e1e6eb;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.hp-peer-winner {
+  border-color: #2c8a5b;
+  background: #f3faf6;
+}
+
+.hp-peer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hp-peer-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: #17202a;
+}
+.hp-peer-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  background: #2c8a5b;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.hp-peer-totals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  line-height: 1.15;
+}
+.hp-peer-totals strong { font-size: 16px; }
+
+.hp-peer-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+  color: #637282;
+}
+.hp-peer-missing { color: #b3261e; font-weight: 600; }
+.hp-peer-allmatched { color: #2c8a5b; font-weight: 600; }
+
+.hp-peer-bulk-btn {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid #2d6cdf;
+  background: #2d6cdf;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.hp-peer-bulk-btn:hover { background: #1f56c2; border-color: #1f56c2; }
+.hp-peer-bulk-btn:disabled { opacity: 0.55; cursor: default; }
+.hp-peer-bulk-btn.hp-cart-ok {
+  background: #2c8a5b;
+  border-color: #2c8a5b;
+}
+.hp-peer-bulk-btn.hp-cart-err {
+  background: #fbe4e4;
+  border-color: #c0392b;
+  color: #c0392b;
+}
+
+.hp-peer-toggle {
+  appearance: none;
+  border: 1px solid #d1d8df;
+  background: #fff;
+  color: #51606f;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.hp-peer-toggle:hover { color: #17202a; }
+
+.hp-peer-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #e7eaee;
+  padding-top: 8px;
+}
+.hp-peer-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name status"
+    "prices prices";
+  gap: 2px 8px;
+  font-size: 12px;
+}
+.hp-peer-item-name {
+  grid-area: name;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hp-peer-item-name a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted #b6bdc5;
+}
+.hp-peer-item-qty {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  background: #eef2f5;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #51606f;
+}
+.hp-peer-item-status {
+  grid-area: status;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hp-peer-status-same { color: #2c8a5b; }
+.hp-peer-status-comp { color: #6a4ad4; }
+.hp-peer-status-missing { color: #b3261e; }
+
+.hp-peer-item-prices {
+  grid-area: prices;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: #637282;
+}
+.hp-peer-item-base { text-decoration: line-through; }
+.hp-peer-item-arrow { color: #b6bdc5; }
+.hp-peer-item-peer { color: #17202a; font-weight: 600; }
