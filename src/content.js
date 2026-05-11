@@ -249,35 +249,142 @@ function pickDelta(item) {
   return { value: item.price_delta, unitSuffix: "" };
 }
 
-function renderMatchList(items, emptyLabel) {
+// HTML-safe text for values that come from the API. The fetch
+// response is trusted (our own server) but product names can carry
+// quotes / ampersands that would break attribute rendering.
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderVoteButtons(item) {
+  const fb = item.feedback || { up: 0, down: 0, mine: null };
+  const upActive = fb.mine === 1 ? " hp-vote-active" : "";
+  const downActive = fb.mine === -1 ? " hp-vote-active" : "";
+  const r = escapeHtml(item.retailer);
+  const s = escapeHtml(item.sku);
+  return `
+    <span class="hp-actions">
+      <button type="button" class="hp-cart-btn"
+              data-peer-retailer="${r}"
+              data-peer-sku="${s}"
+              data-peer-url="${escapeHtml(item.product_url || '')}"
+              title="Adicionar ao carrinho ${r}">+ carrinho</button>
+      <span class="hp-vote-help" tabindex="0"
+            title="É uma boa sugestão?"
+            aria-label="É uma boa sugestão?">?</span>
+      <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
+              data-vote="1" data-peer-retailer="${r}" data-peer-sku="${s}"
+              title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
+      <button type="button" class="hp-vote-btn hp-vote-down${downActive}"
+              data-vote="-1" data-peer-retailer="${r}" data-peer-sku="${s}"
+              title="Não é igual / má alternativa">👎 ${fb.down}</button>
+    </span>
+  `;
+}
+
+// "Mesmo produto" section: collapse all matches into a SINGLE card.
+// Top of the card shows the canonical product once (image+name+brand,
+// derived from the home product payload), then a sorted list of
+// per-retailer rows below. Sort by €/unit ASC (cheapest first).
+function renderCollapsedSameProduct(items, productPayload, emptyLabel) {
   if (!items.length) {
     return `<p class="hp-muted">${emptyLabel}</p>`;
   }
+  const p = productPayload.product || {};
+  const thumb = productPayload.thumb_url
+    ? `<img class="hp-collapsed-thumb" src="${escapeHtml(productPayload.thumb_url)}" alt="" loading="lazy" width="48" height="48">`
+    : "";
+  const head = `
+    <header class="hp-collapsed-head">
+      ${thumb}
+      <div class="hp-collapsed-meta">
+        <span class="hp-collapsed-name">${escapeHtml(p.name || "")}</span>
+        ${p.brand ? `<span class="hp-collapsed-brand">${escapeHtml(p.brand)}</span>` : ""}
+      </div>
+    </header>
+  `;
+  const rows = items.map((item) => {
+    const delta = pickDelta(item);
+    const pp = item.latest?.price_per_primary;
+    const unit = item.latest?.unit_primary;
+    const unitPriceLabel = pp != null && unit
+      ? `${formatEuro(pp)}/${escapeHtml(unit)}`
+      : "";
+    return `
+      <li class="hp-collapsed-row">
+        <a class="hp-collapsed-row-link" href="${escapeHtml(item.detail_url)}" target="_blank" rel="noopener noreferrer">
+          <span class="hp-retailer">${escapeHtml(item.retailer)}</span>
+        </a>
+        <div class="hp-collapsed-row-prices">
+          <span class="hp-collapsed-row-price">${formatEuro(item.latest?.price)}</span>
+          ${unitPriceLabel
+            ? `<span class="hp-collapsed-row-pp">${unitPriceLabel}</span>`
+            : ""}
+        </div>
+        <div class="hp-collapsed-row-headline">
+          ${renderDeltaBadge(delta)}
+        </div>
+        ${renderVoteButtons(item)}
+      </li>
+    `;
+  }).join("");
+  return `
+    <article class="hp-collapsed-card">
+      ${head}
+      <ul class="hp-collapsed-rows">${rows}</ul>
+    </article>
+  `;
+}
+
+// "Alternativas" section: one card per peer, with brand/size diff
+// badges so the user knows WHY this is similar rather than match.
+// query carries the home product's brand/size_value/size_unit. The
+// badges are computed client-side (additive — backend stays simple).
+function renderComparableList(items, query, emptyLabel) {
+  if (!items.length) {
+    return `<p class="hp-muted">${emptyLabel}</p>`;
+  }
+  const homeBrand = (query?.brand || "").toLowerCase().trim();
+  const homeSizeValue = query?.size_value;
+  const homeSizeUnit = query?.size_unit;
   return `
     <ul class="hp-match-list">
       ${items.map((item) => {
-        const fb = item.feedback || { up: 0, down: 0, mine: null };
-        const upActive = fb.mine === 1 ? " hp-vote-active" : "";
-        const downActive = fb.mine === -1 ? " hp-vote-active" : "";
         const delta = pickDelta(item);
         const pp = item.latest?.price_per_primary;
         const unit = item.latest?.unit_primary;
         const unitPriceLabel = pp != null && unit
-          ? `${formatEuro(pp)}/${unit}`
+          ? `${formatEuro(pp)}/${escapeHtml(unit)}`
           : "";
-        // 2-row card. Top row: name | headline (diff above €/L).
-        // Bottom row: absolute price + actions. Diff is the loudest
-        // element — that's the actual decision-driver.
+        const peerBrand = (item.brand || "").toLowerCase().trim();
+        const brandDiffers = peerBrand && homeBrand && peerBrand !== homeBrand;
+        const sizeDiffers = (
+          item.size_unit && homeSizeUnit
+          && item.size_unit === homeSizeUnit
+          && item.size_value != null && homeSizeValue != null
+          && item.size_value !== homeSizeValue
+        );
+        const badges = `
+          ${brandDiffers ? `<span class="hp-diff-badge hp-diff-badge-brand" title="Marca diferente">marca diferente</span>` : ""}
+          ${sizeDiffers ? `<span class="hp-diff-badge hp-diff-badge-size" title="Tamanho diferente">tamanho diferente</span>` : ""}
+        `;
         const thumbHtml = item.thumb_url
-          ? `<img class="hp-match-thumb" src="${item.thumb_url}" alt="" loading="lazy" width="36" height="36">`
+          ? `<img class="hp-match-thumb" src="${escapeHtml(item.thumb_url)}" alt="" loading="lazy" width="36" height="36">`
           : "";
         return `
         <li class="hp-match-row${item.thumb_url ? " hp-match-row-with-thumb" : ""}">
-          <a class="hp-match-link" href="${item.detail_url}" target="_blank" rel="noopener noreferrer">
+          <a class="hp-match-link" href="${escapeHtml(item.detail_url)}" target="_blank" rel="noopener noreferrer">
             ${thumbHtml}
             <span class="hp-match-link-text">
-              <span class="hp-retailer">${item.retailer}</span>
-              <span class="hp-match-name">${item.name || item.sku}</span>
+              <span class="hp-retailer">${escapeHtml(item.retailer)}</span>
+              <span class="hp-match-name">${escapeHtml(item.name || item.sku)}</span>
+              <span class="hp-diff-badges">${badges}</span>
             </span>
           </a>
           <div class="hp-match-headline">
@@ -287,23 +394,8 @@ function renderMatchList(items, emptyLabel) {
               : ""}
           </div>
           <div class="hp-match-footer">
-            <span class="hp-match-price">${formatEuro(item.latest.price)}</span>
-            <span class="hp-actions">
-              <button type="button" class="hp-cart-btn"
-                      data-peer-retailer="${item.retailer}"
-                      data-peer-sku="${item.sku}"
-                      data-peer-url="${item.product_url || ''}"
-                      title="Adicionar ao carrinho ${item.retailer}">+ carrinho</button>
-              <span class="hp-vote-help" tabindex="0"
-                    title="É uma boa sugestão?"
-                    aria-label="É uma boa sugestão?">?</span>
-              <button type="button" class="hp-vote-btn hp-vote-up${upActive}"
-                      data-vote="1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
-                      title="É o mesmo / boa alternativa">👍 ${fb.up}</button>
-              <button type="button" class="hp-vote-btn hp-vote-down${downActive}"
-                      data-vote="-1" data-peer-retailer="${item.retailer}" data-peer-sku="${item.sku}"
-                      title="Não é igual / má alternativa">👎 ${fb.down}</button>
-            </span>
+            <span class="hp-match-price">${formatEuro(item.latest?.price)}</span>
+            ${renderVoteButtons(item)}
           </div>
         </li>
         `;
@@ -312,94 +404,9 @@ function renderMatchList(items, emptyLabel) {
   `;
 }
 
-const CHART_RANGES = [
-  { id: "1w", label: "1S", days: 7 },
-  { id: "1m", label: "1M", days: 30 },
-  { id: "1y", label: "1A", days: 365 },
-  { id: "all", label: "Tudo", days: null },
-];
-
-function filterHistoryByDays(history, days) {
-  if (!days) return history.slice();
-  const cutoff = Date.now() - days * 86400000;
-  return history.filter((h) => {
-    const t = new Date(h.observed_at).getTime();
-    return Number.isFinite(t) && t >= cutoff;
-  });
-}
-
-function renderChartSvg(history) {
-  const points = history
-    .map((h) => ({ t: new Date(h.observed_at).getTime(), p: Number(h.price) }))
-    .filter((d) => Number.isFinite(d.t) && Number.isFinite(d.p))
-    .sort((a, b) => a.t - b.t);
-
-  const W = 360, H = 90, PAD_X = 6, PAD_Y = 12;
-  if (points.length === 0) {
-    return `<svg class="hp-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <text x="${W/2}" y="${H/2}" text-anchor="middle" class="hp-chart-empty">sem dados no intervalo</text>
-    </svg>`;
-  }
-  if (points.length === 1) {
-    return `<svg class="hp-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <circle cx="${W/2}" cy="${H/2}" r="3" class="hp-chart-dot"/>
-      <text x="${W/2}" y="${H/2 - 8}" text-anchor="middle" class="hp-chart-label">${formatEuro(points[0].p)}</text>
-    </svg>`;
-  }
-
-  const tMin = points[0].t, tMax = points[points.length - 1].t;
-  const tSpan = Math.max(tMax - tMin, 1);
-  const prices = points.map((d) => d.p);
-  const pMin = Math.min(...prices), pMax = Math.max(...prices);
-  const pSpan = Math.max(pMax - pMin, 0.01);
-
-  const innerW = W - 2 * PAD_X;
-  const innerH = H - 2 * PAD_Y;
-  const xs = (t) => PAD_X + ((t - tMin) / tSpan) * innerW;
-  const ys = (p) => PAD_Y + (1 - (p - pMin) / pSpan) * innerH;
-
-  const linePath = points.map((d, i) => `${i === 0 ? "M" : "L"} ${xs(d.t).toFixed(1)} ${ys(d.p).toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L ${xs(points[points.length - 1].t).toFixed(1)} ${(H - PAD_Y).toFixed(1)} L ${xs(points[0].t).toFixed(1)} ${(H - PAD_Y).toFixed(1)} Z`;
-
-  const last = points[points.length - 1];
-  const lastX = xs(last.t), lastY = ys(last.p);
-
-  const minLabelY = ys(pMin);
-  const maxLabelY = ys(pMax);
-  return `<svg class="hp-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-    <path d="${areaPath}" class="hp-chart-area"/>
-    <path d="${linePath}" class="hp-chart-line"/>
-    <circle cx="${lastX}" cy="${lastY}" r="3" class="hp-chart-dot"/>
-    <text x="${PAD_X}" y="${Math.max(maxLabelY - 4, 10)}" class="hp-chart-label hp-chart-label-max">${formatEuro(pMax)}</text>
-    <text x="${PAD_X}" y="${Math.min(minLabelY + 10, H - 2)}" class="hp-chart-label hp-chart-label-min">${formatEuro(pMin)}</text>
-  </svg>`;
-}
-
-function renderChartButtons(activeId) {
-  return CHART_RANGES.map((r) => `
-    <button type="button" class="hp-chart-btn${r.id === activeId ? " hp-chart-btn-active" : ""}" data-range="${r.id}">${r.label}</button>
-  `).join("");
-}
-
-function attachChart(panel, history) {
-  const container = panel.querySelector(".hp-chart-container");
-  if (!container) return;
-  const buttons = panel.querySelector(".hp-chart-buttons");
-  const draw = (rangeId) => {
-    const range = CHART_RANGES.find((r) => r.id === rangeId) || CHART_RANGES[1];
-    const filtered = filterHistoryByDays(history, range.days);
-    container.innerHTML = renderChartSvg(filtered);
-    buttons.querySelectorAll(".hp-chart-btn").forEach((b) => {
-      b.classList.toggle("hp-chart-btn-active", b.dataset.range === rangeId);
-    });
-  };
-  buttons.addEventListener("click", (e) => {
-    const btn = e.target.closest(".hp-chart-btn");
-    if (!btn) return;
-    draw(btn.dataset.range);
-  });
-  draw("1m");
-}
+// All chart geometry, hover-tooltip markup, and range-button wiring
+// live in src/chart.js (HpChart.*) — the same module the web page
+// loads via /static/chart.js so both surfaces stay byte-identical.
 
 function attachVoteHandlers(panel, ctx) {
   const { retailer, sku, apiBase, voterId, refresh } = ctx;
@@ -562,24 +569,26 @@ function renderPanel(panel, productPayload, matchesPayload, historyPayload, ctx)
     </div>
     ${showChart
       ? `<section class="hp-chart-section">
-           <div class="hp-chart-buttons">${renderChartButtons("1m")}</div>
-           <div class="hp-chart-container"></div>
+           <div class="hp-chart-host"></div>
          </section>`
       : `<p class="hp-muted">Histórico insuficiente para gráfico.</p>`}
     ${renderNutrition(productPayload.nutrition)}
     <section>
       <h2>Mesmo produto</h2>
-      ${renderMatchList(sameAll, "Sem equivalentes noutros supermercados.")}
+      ${renderCollapsedSameProduct(sameAll, productPayload, "Sem equivalentes noutros supermercados.")}
     </section>
     <section>
       <h2>Alternativas</h2>
-      ${renderMatchList(comparableCheaper, "Sem alternativas comparáveis.")}
+      ${renderComparableList(comparableCheaper, matchesPayload.query, "Sem alternativas comparáveis.")}
     </section>
     <a class="hp-detail-link" href="${productPayload.links.html}" target="_blank" rel="noopener noreferrer">
       Ver historico completo
     </a>
   `;
-  if (showChart) attachChart(panel, history);
+  if (showChart) {
+    const host = panel.querySelector(".hp-chart-host");
+    if (host) window.HpChart.attach(host, history);
+  }
   if (ctx) attachVoteHandlers(panel, ctx);
   attachCartHandlers(panel);
 }

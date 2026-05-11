@@ -22,7 +22,7 @@
         "https://www.auchan.pt/*",
         "https://www.pingodoce.pt/*"
       ],
-      "js": ["src/content.js"],
+      "js": ["src/chart.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle"
     }

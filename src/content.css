@@ -241,6 +241,132 @@
   font-size: 13px;
 }
 
+/* "Mesmo produto" collapsed card: header (product info shown once) +
+   per-retailer price rows below, sorted by €/unit. Mirrors the web
+   UI's .cross-collapsed-card layout (see scraper/static/style.css).
+   Vote buttons stay per-row. */
+.hp-collapsed-card {
+  border: 1px solid #e1e6eb;
+  border-radius: 7px;
+  background: #fbfcfd;
+  overflow: hidden;
+}
+.hp-collapsed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e7eaee;
+  background: #fff;
+}
+.hp-collapsed-thumb {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #e1e6eb;
+  border-radius: 6px;
+  padding: 1px;
+}
+.hp-collapsed-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.hp-collapsed-name {
+  font-weight: 600;
+  color: #17202a;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.hp-collapsed-brand {
+  color: #637282;
+  font-size: 11px;
+}
+.hp-collapsed-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hp-collapsed-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "retailer prices headline"
+    "actions  actions actions";
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  border-top: 1px solid #e7eaee;
+}
+.hp-collapsed-row:first-child { border-top: 0; }
+.hp-collapsed-row-link {
+  grid-area: retailer;
+  text-decoration: none;
+}
+.hp-collapsed-row-prices {
+  grid-area: prices;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hp-collapsed-row-price {
+  font-weight: 700;
+  color: #17202a;
+  font-size: 13px;
+}
+.hp-collapsed-row-pp {
+  font-size: 11px;
+  color: #637282;
+}
+.hp-collapsed-row-headline {
+  grid-area: headline;
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1.15;
+}
+.hp-collapsed-row .hp-actions {
+  grid-area: actions;
+  margin-left: auto;
+  margin-top: 2px;
+}
+
+/* "marca diferente" / "tamanho diferente" pills on Alternativas
+   cards. Same intent as the web UI's .cross-diff-badge. */
+.hp-diff-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-left: 4px;
+}
+.hp-diff-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid #d1d8df;
+  border-radius: 999px;
+  color: #637282;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.hp-diff-badge-brand {
+  color: #6a4ad4;
+  border-color: #d4cbf5;
+  background: #f4f0ff;
+}
+.hp-diff-badge-size {
+  color: #c2410c;
+  border-color: #ffd6b8;
+  background: #fff1e3;
+}
+
 .hp-detail-link {
   display: inline-flex;
   justify-self: start;
@@ -254,6 +380,21 @@
   gap: 8px;
 }
 
+/* === SHARED CHART BLOCK ===========================================
+   The .hp-chart-* rules below pair with the markup emitted by
+   src/chart.js (window.HpChart.attach). The same block lives in
+   scraper/static/style.css under "Price-history chart" — edit one
+   and you must edit the other so both surfaces stay visually
+   identical.
+
+   Theme: colours are read from `--hp-chart-*` custom properties on
+   `.hp-chart`. The web side overrides them to match its green
+   palette; here we keep the defaults (blue accent matching the rest
+   of the panel). ================================================ */
+.hp-chart-host {
+  display: grid;
+  gap: 8px;
+}
 .hp-chart-buttons {
   display: inline-flex;
   gap: 4px;
@@ -262,7 +403,6 @@
   border-radius: 8px;
   justify-self: start;
 }
-
 .hp-chart-btn {
   appearance: none;
   border: 0;
@@ -275,58 +415,155 @@
   cursor: pointer;
   font-family: inherit;
 }
-
-.hp-chart-btn:hover {
-  color: #17202a;
-}
-
+.hp-chart-btn:hover { color: #17202a; }
 .hp-chart-btn-active {
   background: #ffffff;
   color: #17202a;
   box-shadow: 0 1px 2px rgba(20, 31, 43, 0.12);
 }
-
-.hp-chart-container {
-  width: 100%;
-}
-
+.hp-chart-container { width: 100%; }
 .hp-chart {
-  width: 100%;
-  height: 90px;
-  display: block;
-}
+  --hp-chart-n: 1;
+  --hp-chart-accent: #2d6cdf;
+  --hp-chart-accent-soft: rgba(45, 108, 223, 0.16);
+  --hp-chart-surface: #ffffff;
+  --hp-chart-border: #e5e7ec;
+  --hp-chart-text-muted: #637282;
+  --hp-chart-axis: #d6dae1;
+  --hp-chart-tooltip-bg: #17202a;
+  --hp-chart-tooltip-text: #ffffff;
+  --hp-chart-tooltip-strip: 30px;
+  --hp-chart-plot-height: 130px;
+  --hp-chart-marker-min-width: 20px;
+  --hp-chart-marker-max-width: 48px;
 
+  position: relative;
+  background: var(--hp-chart-surface);
+  border: 1px solid var(--hp-chart-border);
+  border-radius: 8px;
+  padding-top: var(--hp-chart-tooltip-strip);
+}
+.hp-chart-svg {
+  display: block;
+  width: 100%;
+  height: var(--hp-chart-plot-height);
+}
 .hp-chart-area {
-  fill: rgba(45, 108, 223, 0.12);
+  fill: var(--hp-chart-accent-soft);
   stroke: none;
 }
-
 .hp-chart-line {
   fill: none;
-  stroke: #2d6cdf;
-  stroke-width: 1.5;
+  stroke: var(--hp-chart-accent);
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-
+.hp-chart-axis { stroke: var(--hp-chart-axis); stroke-width: 1; }
+.hp-chart-axis-faint { stroke-dasharray: 2 3; opacity: 0.6; }
+/* Axis labels are HTML, not SVG <text>, so the chart's stretched
+   aspect ratio doesn't deform the glyphs. */
+.hp-chart-axis-label {
+  position: absolute;
+  left: 10px;
+  font-size: 11px;
+  color: var(--hp-chart-text-muted);
+  pointer-events: none;
+  line-height: 1;
+  background: var(--hp-chart-surface);
+  padding: 0 3px;
+}
+.hp-chart-axis-label-max { top: calc(var(--hp-chart-tooltip-strip) + 6px); }
+.hp-chart-axis-label-min { bottom: 6px; }
+.hp-chart-markers {
+  position: absolute;
+  top: var(--hp-chart-tooltip-strip);
+  left: 0;
+  right: 0;
+  height: var(--hp-chart-plot-height);
+  pointer-events: none;
+}
+.hp-chart-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--hp-chart-x, 0);
+  /* Hit-area width scales with the number of points; clamped so a
+     sparse chart isn't a giant column and a dense one is still
+     tappable. Adjacent strips can overlap — later (more recent)
+     points win on z-order, which is the natural behaviour. */
+  width: clamp(
+    var(--hp-chart-marker-min-width),
+    calc(100% / var(--hp-chart-n)),
+    var(--hp-chart-marker-max-width)
+  );
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+.hp-chart-guide,
+.hp-chart-dot,
+.hp-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 80ms ease-out;
+}
+.hp-chart-guide {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--hp-chart-accent);
+}
 .hp-chart-dot {
-  fill: #2d6cdf;
+  left: 50%;
+  top: var(--hp-chart-y, 50%);
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--hp-chart-accent);
+  box-shadow: 0 0 0 3px var(--hp-chart-surface);
 }
-
-.hp-chart-label {
-  font-family: inherit;
-  font-size: 10px;
-  fill: #637282;
+.hp-chart-tooltip {
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  background: var(--hp-chart-tooltip-bg);
+  color: var(--hp-chart-tooltip-text);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  z-index: 1;
 }
-
-.hp-chart-label-max {
-  fill: #354454;
+.hp-chart-tooltip-price { font-weight: 600; }
+.hp-chart-tooltip-date {
+  display: block;
+  margin-top: 1px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11px;
 }
+.hp-chart-marker:hover .hp-chart-guide,
+.hp-chart-marker:hover .hp-chart-dot,
+.hp-chart-marker:hover .hp-chart-tooltip {
+  opacity: 1;
+}
+.hp-chart-marker:hover { z-index: 2; }
+.hp-chart-hint {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--hp-chart-text-muted);
+}
+/* === END SHARED CHART BLOCK ====================================== */
 
 .hp-chart-empty {
-  font-family: inherit;
+  margin: 0;
   font-size: 12px;
-  fill: #637282;
+  color: #637282;
 }
 
 .hp-match-row {
